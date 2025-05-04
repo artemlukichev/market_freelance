@@ -81,13 +81,13 @@ def test_assign_best_executor_greedy():
 
 
 def test_create_executor():
-    response = client.post("/executors/executors", json={"username": "executor1"})
+    response = client.post("/executors", json={"username": "new_executor2"})
     assert response.status_code == 200
     assert "id" in response.json()
 
 
 def test_get_executors_with_tasks_and_avg_score():
-    response = client.get("/executors/executors/with-tasks")
+    response = client.get("/executors/with-tasks")
     assert response.status_code == 200
     executors_data = response.json()
     assert isinstance(executors_data, list)
