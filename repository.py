@@ -3,7 +3,7 @@ from passlib.context import CryptContext
 
 from database import TaskOrm, new_session, UserOrm, ExecutorOrm, TaskResultOrm, ExecutorSpecializationOrm
 from schemas import STask, STaskAdd
-
+from datetime import datetime
 
 class TaskRepository:
     """Репозиторий для работы с задачами."""
@@ -38,12 +38,22 @@ class TaskRepository:
 
     @classmethod
     async def close_task(cls, task_id: int, executor_id: int, score: int) -> bool:
-        """Закрыть задачу с оценкой исполнителя."""
+        """Закрыть задачу с оценкой исполнителя и временем закрытия."""
         if not 0 <= score <= 10:
             raise ValueError("Оценка должна быть от 0 до 10")
 
         async with new_session() as session:
-            task_result = TaskResultOrm(task_id=task_id, executor_id=executor_id, score=score)
+            task = await session.get(TaskOrm, task_id)
+            if not task:
+                raise ValueError("Задача не найдена")
+
+            task.closed_at = datetime.utcnow()
+
+            task_result = TaskResultOrm(
+                task_id=task_id,
+                executor_id=executor_id,
+                score=score
+            )
             session.add(task_result)
             await session.commit()
             return True
@@ -52,7 +62,11 @@ class TaskRepository:
     async def assign_executor(cls, task_id: int, executor_id: int) -> bool:
         """Назначить исполнителя на задачу."""
         async with new_session() as session:
-            query = update(TaskOrm).where(TaskOrm.id == task_id).values(executor_id=executor_id)
+            query = (
+                update(TaskOrm)
+                .where(TaskOrm.id == task_id)
+                .values(executor_id=executor_id, accepted_at=datetime.utcnow())
+            )
             result = await session.execute(query)
             await session.commit()
             return result.rowcount > 0
@@ -64,14 +78,12 @@ class TaskRepository:
             if not task:
                 raise ValueError("Задача не найдена")
 
-            # Найдём подходящих исполнителей по специализации
             subq = (
                 select(ExecutorSpecializationOrm.executor_id)
                 .where(ExecutorSpecializationOrm.specialization == task.subject_area)
                 .subquery()
             )
 
-            # Статистика по исполнителям с нужной специализацией
             stats_query = (
                 select(
                     ExecutorOrm.id,
@@ -93,11 +105,14 @@ class TaskRepository:
             best = min(stats, key=lambda x: (x.task_count, -(x.avg_score or 0)))
             executor_id, username, *_ = best
 
-            await session.execute(update(TaskOrm).where(TaskOrm.id == task_id).values(executor_id=executor_id))
+            await session.execute(
+                update(TaskOrm)
+                .where(TaskOrm.id == task_id)
+                .values(executor_id=executor_id, accepted_at=datetime.utcnow())
+            )
             await session.commit()
 
             return {"executor_id": executor_id, "executor_username": username}
-
 
 class UserRepository:
     """Репозиторий для управления пользователями."""
@@ -166,7 +181,7 @@ class ExecutorRepository:
 
     @classmethod
     async def get_executors_with_tasks_and_avg_score(cls):
-        """Получить всех исполнителей с задачами и средней оценкой."""
+        """Получить всех исполнителей с задачами, средней оценкой и средней длительностью выполнения задач."""
         async with new_session() as session:
             executor_query = (
                 select(ExecutorOrm)
@@ -187,14 +202,32 @@ class ExecutorRepository:
                 score_result = await session.execute(score_query)
                 avg_score = score_result.scalar()
 
+                task_list = []
+                execution_times = []
+
+                for task in tasks:
+                    execution_time_hours = None
+                    if task.accepted_at and task.closed_at:
+                        delta = task.closed_at - task.accepted_at
+                        execution_time_hours = round(delta.total_seconds() / 3600, 2)
+                        execution_times.append(execution_time_hours)
+
+                    task_list.append({
+                        "id": task.id,
+                        "name": task.name,
+                        "description": task.description,
+                        "execution_time_hours": execution_time_hours
+                    })
+
+                average_execution_time = round(sum(execution_times) / len(execution_times),
+                                               2) if execution_times else None
+
                 data.append({
                     "executor_id": executor.id,
                     "executor_username": executor.username,
-                    "tasks": [
-                        {"id": task.id, "name": task.name, "description": task.description}
-                        for task in tasks
-                    ],
-                    "average_score": round(avg_score, 2) if avg_score is not None else None
+                    "tasks": task_list,
+                    "average_score": round(avg_score, 2) if avg_score is not None else None,
+                    "average_execution_time_hours": average_execution_time
                 })
 
             return data

@@ -4,10 +4,10 @@ from pydantic import BaseModel, ConfigDict
 
 
 class STaskAdd(BaseModel):
-    """Схема для добавления новой задачи."""
     name: str
     description: str | None = None
     author_id: int
+    subject_area: str
 
 
 class STask(STaskAdd):
@@ -73,8 +73,11 @@ class ExecutorWithTasksAndScore(BaseModel):
     """Исполнитель с задачами и средней оценкой."""
     executor_id: int
     executor_username: str
+    specialization: str | None = None
     tasks: list[TaskShort]
     average_score: float | None
+    average_execution_time_hours: float | None = None
+
 
 class ExecutorCreate(BaseModel):
     username: str

@@ -3,6 +3,8 @@
 from sqlalchemy import ForeignKey
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy import DateTime
+from datetime import datetime
 
 # Создание движка и сессии
 engine = create_async_engine("sqlite+aiosqlite:///tasks.db")
@@ -24,6 +26,8 @@ class TaskOrm(Model):
     author_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     executor_id: Mapped[int | None] = mapped_column(ForeignKey("executors.id"))
     subject_area: Mapped[str]
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     results = relationship("TaskResultOrm", back_populates="task")
 
 
