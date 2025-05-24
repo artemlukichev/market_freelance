@@ -1,7 +1,7 @@
 from sqlalchemy import select, update, func
 from passlib.context import CryptContext
 
-from database import TaskOrm, new_session, UserOrm, ExecutorOrm, TaskResultOrm
+from database import TaskOrm, new_session, UserOrm, ExecutorOrm, TaskResultOrm, ExecutorSpecializationOrm
 from schemas import STask, STaskAdd
 
 
@@ -59,8 +59,19 @@ class TaskRepository:
 
     @classmethod
     async def assign_task_to_best_executor_greedy(cls, task_id: int) -> dict:
-        """Жадный выбор лучшего исполнителя для задачи."""
         async with new_session() as session:
+            task = await session.get(TaskOrm, task_id)
+            if not task:
+                raise ValueError("Задача не найдена")
+
+            # Найдём подходящих исполнителей по специализации
+            subq = (
+                select(ExecutorSpecializationOrm.executor_id)
+                .where(ExecutorSpecializationOrm.specialization == task.subject_area)
+                .subquery()
+            )
+
+            # Статистика по исполнителям с нужной специализацией
             stats_query = (
                 select(
                     ExecutorOrm.id,
@@ -68,6 +79,7 @@ class TaskRepository:
                     func.count(TaskOrm.id).label("task_count"),
                     func.avg(TaskResultOrm.score).label("avg_score")
                 )
+                .where(ExecutorOrm.id.in_(select(subq.c.executor_id)))
                 .outerjoin(TaskOrm, TaskOrm.executor_id == ExecutorOrm.id)
                 .outerjoin(TaskResultOrm, TaskResultOrm.executor_id == ExecutorOrm.id)
                 .group_by(ExecutorOrm.id)
@@ -76,26 +88,15 @@ class TaskRepository:
             stats = result.all()
 
             if not stats:
-                raise ValueError("Нет доступных исполнителей")
+                raise ValueError("Нет подходящих исполнителей по специализации")
 
-            best = min(
-                stats,
-                key=lambda x: (x.task_count, -(x.avg_score or 0))
-            )
+            best = min(stats, key=lambda x: (x.task_count, -(x.avg_score or 0)))
+            executor_id, username, *_ = best
 
-            executor_id, username, _, _ = best
-
-            update_query = update(TaskOrm).where(TaskOrm.id == task_id).values(executor_id=executor_id)
-            result = await session.execute(update_query)
+            await session.execute(update(TaskOrm).where(TaskOrm.id == task_id).values(executor_id=executor_id))
             await session.commit()
 
-            if result.rowcount == 0:
-                raise ValueError("Задача не найдена")
-
-            return {
-                "executor_id": executor_id,
-                "executor_username": username
-            }
+            return {"executor_id": executor_id, "executor_username": username}
 
 
 class UserRepository:
@@ -152,12 +153,14 @@ class ExecutorRepository:
     """Репозиторий для управления исполнителями."""
 
     @classmethod
-    async def create_executor(cls, username: str) -> int:
+    async def create_executor(cls, username: str, specializations: list[str]) -> int:
         """Создать нового исполнителя."""
         async with new_session() as session:
             executor = ExecutorOrm(username=username)
             session.add(executor)
             await session.flush()
+            for spec in specializations:
+                session.add(ExecutorSpecializationOrm(executor_id=executor.id, specialization=spec))
             await session.commit()
             return executor.id
 
@@ -195,3 +198,19 @@ class ExecutorRepository:
                 })
 
             return data
+
+    @classmethod
+    async def add_specialization(cls, executor_id: int, specialization: str):
+        """Добавление специализации исполнителю."""
+        async with new_session() as session:
+            exists_query = select(ExecutorSpecializationOrm).where(
+                ExecutorSpecializationOrm.executor_id == executor_id,
+                ExecutorSpecializationOrm.specialization == specialization
+            )
+            result = await session.execute(exists_query)
+            if result.scalar():
+                return  # уже существует
+
+            session.add(ExecutorSpecializationOrm(executor_id=executor_id, specialization=specialization))
+            await session.commit()
+

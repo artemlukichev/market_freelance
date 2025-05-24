@@ -23,6 +23,7 @@ class TaskOrm(Model):
     description: Mapped[str | None]
     author_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     executor_id: Mapped[int | None] = mapped_column(ForeignKey("executors.id"))
+    subject_area: Mapped[str]
     results = relationship("TaskResultOrm", back_populates="task")
 
 
@@ -41,6 +42,9 @@ class ExecutorOrm(Model):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(unique=True)
+    specializations: Mapped[list["ExecutorSpecializationOrm"]] = relationship(
+        back_populates="executor", cascade="all, delete-orphan"
+    )
     tasks: Mapped[list["TaskOrm"]] = relationship(backref="executor")
 
 
@@ -65,3 +69,12 @@ async def delete_tables():
     """Удалить все таблицы из базы данных."""
     async with engine.begin() as conn:
         await conn.run_sync(Model.metadata.drop_all)
+
+class ExecutorSpecializationOrm(Model):
+    __tablename__ = "executor_specializations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    executor_id: Mapped[int] = mapped_column(ForeignKey("executors.id"))
+    specialization: Mapped[str]
+
+    executor: Mapped["ExecutorOrm"] = relationship(back_populates="specializations")

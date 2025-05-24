@@ -75,3 +75,11 @@ class ExecutorWithTasksAndScore(BaseModel):
     executor_username: str
     tasks: list[TaskShort]
     average_score: float | None
+
+class ExecutorCreate(BaseModel):
+    username: str
+    specializations: list[str] = []
+
+
+class AddSpecialization(BaseModel):
+    specialization: str

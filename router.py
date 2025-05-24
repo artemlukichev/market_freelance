@@ -19,7 +19,9 @@ from schemas import (
     STaskNameUpdate,
     UserRegister,
     UserLogin,
-    Token
+    Token,
+    ExecutorCreate,
+    AddSpecialization
 )
 
 # ---------------------- Task Router ----------------------
@@ -189,9 +191,9 @@ executors_router = APIRouter(
 
 
 @executors_router.post("")
-async def create_executor(username: str = Body(..., embed=True)):
+async def create_executor(executor: ExecutorCreate):
     """Создать нового исполнителя."""
-    executor_id = await ExecutorRepository.create_executor(username)
+    executor_id = await ExecutorRepository.create_executor(executor.username, executor.specializations)
     return {"id": executor_id}
 
 
@@ -200,6 +202,11 @@ async def get_executors_with_tasks_and_avg_score():
     """Получить исполнителей с их задачами и средней оценкой."""
     data = await ExecutorRepository.get_executors_with_tasks_and_avg_score()
     return data
+
+@executors_router.post("/{executor_id}/specializations")
+async def add_specialization(executor_id: int, data: AddSpecialization):
+    await ExecutorRepository.add_specialization(executor_id, data.specialization)
+    return {"message": "Specialization added"}
 
 # ---------------------- Utility ----------------------
 

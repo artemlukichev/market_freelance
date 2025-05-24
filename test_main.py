@@ -68,7 +68,7 @@ def test_close_task():
 
 
 def test_assign_executor():
-    response = client.put("/tasks/1/assign?executor_id=1")  # Параметры передаем через query
+    response = client.put("/tasks/1/assign?executor_id=1")
     assert response.status_code == 200
     assert response.json() == {"message": "Исполнитель назначен"}
 
@@ -81,7 +81,7 @@ def test_assign_best_executor_greedy():
 
 
 def test_create_executor():
-    response = client.post("/executors", json={"username": "new_executor2"})
+    response = client.post("/executors", json={"username": "new_executor"})
     assert response.status_code == 200
     assert "id" in response.json()
 
